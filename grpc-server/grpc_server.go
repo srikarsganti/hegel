@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
@@ -73,6 +74,14 @@ func Serve(_ context.Context, l log.Logger, srv *Server) error {
 	port := env.Int("GRPC_PORT", 42115)
 
 	serverOpts := make([]grpc.ServerOption, 0)
+	// TODO setup keepalive parameters
+	foo := keepalive.ServerParameters{
+		MaxConnectionIdle:     time.ParseDuration("4h30m"),
+		MaxConnectionAge:      time.ParseDuration("4h30m"),
+		MaxConnectionAgeGrace: time.ParseDuration("4h30m"),
+		Time:                  time.ParseDuration("4h30m"),
+		Timeout:               time.ParseDuration("4h30m"),
+	}
 
 	// setup tls credentials
 	if *useTLS {
