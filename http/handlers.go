@@ -51,6 +51,18 @@ var ec2Filters = map[string]string{
 	"/meta-data/local-ipv4":                                ".metadata.instance.network.addresses[]? | select(.address_family == 4 and .public == false) | .address",
 }
 
+var hegelFilters = map[string]string{
+	"":                      `"metadata", "userdata"`, // base path
+	"/userdata":             ".metadata.userdata",
+	"/metadata":             `["instance-id", "hostname", "public-ipv4", "public-ipv6", "local-ipv4"] | sort | .[]`,
+	"/metadata/instance-id": ".metadata.instance.id",
+	"/metadata/hostname":    ".metadata.instance.hostname",
+	"/metadata/disks":       ".metadata.disks",
+	"/metadata/public-ipv4": ".metadata.instance.network.addresses[]? | select(.address_family == 4 and .public == true) | .address",
+	"/metadata/public-ipv6": ".metadata.instance.network.addresses[]? | select(.address_family == 6 and .public == true) | .address",
+	"/metadata/local-ipv4":  ".metadata.instance.network.addresses[]? | select(.address_family == 4 and .public == false) | .address",
+}
+
 func VersionHandler(logger log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		payload := struct {
@@ -222,6 +234,68 @@ func EC2MetadataHandler(logger log.Logger, client hardware.Client) http.Handler 
 	})
 }
 
+func HegelMetadataHandler(logger log.Logger, client hardware.Client) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		logger.Debug("calling HegelMetadataHandler")
+		userIP := getIPFromRequest(r)
+		if userIP == "" {
+			logger.Info("Could not retrieve IP address")
+			return
+		}
+
+		metrics.MetadataRequests.Inc()
+		logger := logger.With("userIP", userIP)
+		logger.Info("Retrieved IP peer IP")
+
+		hw, err := client.ByIP(r.Context(), userIP)
+		if err != nil {
+			metrics.Errors.WithLabelValues("metadata", "lookup").Inc()
+			logger.With("error", err).Info("failed to get hardware by ip")
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		ehw, err := hw.Export()
+		if err != nil {
+			logger.With("error", err).Info("failed to export hardware")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, err := w.Write([]byte("404 not found"))
+			if err != nil {
+				logger.With("error", err).Info("failed to write response")
+			}
+			return
+		}
+
+		logger.With("exported", string(ehw)).Debug("Exported hardware")
+
+		filter, err := processHegelQuery(r.URL.Path)
+		if err != nil {
+			logger.With("error", err).Info("failed to process hegel query")
+			w.WriteHeader(http.StatusNotFound)
+			_, err := w.Write([]byte("404 not found"))
+			if err != nil {
+				logger.With("error", err).Info("failed to write response")
+			}
+			return
+		}
+
+		resp, err := filterMetadata(ehw, filter)
+		if err != nil {
+			logger.With("error", err).Info("failed to filter metadata")
+		}
+
+		_, err = w.Write(resp)
+		if err != nil {
+			logger.With("error", err).Info("failed to write response")
+		}
+	})
+}
+
 func filterMetadata(hw []byte, filter string) ([]byte, error) {
 	var result bytes.Buffer
 	query, err := gojq.Parse(filter)
@@ -268,6 +342,17 @@ func processEC2Query(url string) (string, error) {
 	query := strings.TrimRight(strings.TrimPrefix(url, "/2009-04-04"), "/") // remove base pattern and trailing slash
 
 	filter, ok := ec2Filters[query]
+	if !ok {
+		return "", errors.Errorf("invalid metadata item: %v", query)
+	}
+
+	return filter, nil
+}
+
+func processHegelQuery(url string) (string, error) {
+	query := strings.TrimRight(strings.TrimPrefix(url, "/v0"), "/") // remove base pattern and trailing slash
+
+	filter, ok := hegelFilters[query]
 	if !ok {
 		return "", errors.Errorf("invalid metadata item: %v", query)
 	}

@@ -38,6 +38,10 @@ func Serve(
 	mux.Handle("/2009-04-04/", ec2MetadataHandler)
 	mux.Handle("/2009-04-04", ec2MetadataHandler)
 
+	hegelMetadataHandler := otelhttp.WithRouteTag("/v0", HegelMetadataHandler(logger, client))
+	mux.Handle("/v0/", hegelMetadataHandler)
+	mux.Handle("/v0", hegelMetadataHandler)
+
 	subscriptionHandler := otelhttp.WithRouteTag("/subscriptions", SubscriptionsHandler(grpcsrv, logger))
 	mux.Handle("/subscriptions/", subscriptionHandler)
 	mux.Handle("/subscriptions", subscriptionHandler)
