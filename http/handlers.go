@@ -54,13 +54,15 @@ var ec2Filters = map[string]string{
 var hegelFilters = map[string]string{
 	"":                      `"metadata", "userdata"`, // base path
 	"/userdata":             ".metadata.userdata",
-	"/metadata":             `["instance-id", "hostname", "public-ipv4", "public-ipv6", "local-ipv4"] | sort | .[]`,
+	"/metadata":             `["instance-id", "hostname", "disks", "public-ipv4", "public-ipv6", "local-ipv4", "gateway", "netmask"] | sort | .[]`,
 	"/metadata/instance-id": ".metadata.instance.id",
 	"/metadata/hostname":    ".metadata.instance.hostname",
 	"/metadata/disks":       ".metadata.disks",
 	"/metadata/public-ipv4": ".metadata.instance.network.addresses[]? | select(.address_family == 4 and .public == true) | .address",
 	"/metadata/public-ipv6": ".metadata.instance.network.addresses[]? | select(.address_family == 6 and .public == true) | .address",
 	"/metadata/local-ipv4":  ".metadata.instance.network.addresses[]? | select(.address_family == 4 and .public == false) | .address",
+	"/metadata/gateway":     ".metadata.instance.network.addresses[]? | .gateway",
+	"/metadata/netmask":     ".metadata.instance.network.addresses[]? | .netmask",
 }
 
 func VersionHandler(logger log.Logger) http.Handler {

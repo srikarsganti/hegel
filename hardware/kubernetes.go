@@ -196,6 +196,8 @@ func FromK8sTinkHardware(tinkHardware *tinkv1alpha1.Hardware) *K8sHardware {
 				Address:       ip.Address,
 				AddressFamily: ip.Family,
 				Public:        ip.Public,
+				Netmask:       ip.Netmask,
+				Gateway:       ip.Gateway,
 			},
 		)
 	}
@@ -259,6 +261,8 @@ type K8sHardwareMetadataInstanceNetwork struct {
 type K8sHardwareMetadataInstanceNetworkAddress struct {
 	AddressFamily int64  `json:"address_family,omitempty"`
 	Address       string `json:"address,omitempty"`
+	Netmask       string `json:"netmask,omitempty"`
+	Gateway       string `json:"gateway,omitempty"`
 	Public        bool   `json:"public,omitempty"`
 }
 
