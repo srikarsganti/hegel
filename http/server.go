@@ -27,6 +27,7 @@ func Serve(
 	model datamodel.DataModel,
 	customEndpoints string,
 	unparsedProxies string,
+	defaultAPI bool,
 ) error {
 	logger.Info("in the http serve func")
 	var mux http.ServeMux
@@ -34,13 +35,15 @@ func Serve(
 	mux.Handle("/_packet/healthcheck", HealthCheckHandler(logger, client, start))
 	mux.Handle("/_packet/version", VersionHandler(logger))
 
-	ec2MetadataHandler := otelhttp.WithRouteTag("/2009-04-04", EC2MetadataHandler(logger, client))
-	mux.Handle("/2009-04-04/", ec2MetadataHandler)
-	mux.Handle("/2009-04-04", ec2MetadataHandler)
-
-	hegelMetadataHandler := otelhttp.WithRouteTag("/v0", HegelMetadataHandler(logger, client))
-	mux.Handle("/v0/", hegelMetadataHandler)
-	mux.Handle("/v0", hegelMetadataHandler)
+	if defaultAPI {
+		ec2MetadataHandler := otelhttp.WithRouteTag("/2009-04-04", EC2MetadataHandler(logger, client))
+		mux.Handle("/2009-04-04/", ec2MetadataHandler)
+		mux.Handle("/2009-04-04", ec2MetadataHandler)
+	} else {
+		hegelMetadataHandler := otelhttp.WithRouteTag("/v0", HegelMetadataHandler(logger, client))
+		mux.Handle("/v0/", hegelMetadataHandler)
+		mux.Handle("/v0", hegelMetadataHandler)
+	}
 
 	subscriptionHandler := otelhttp.WithRouteTag("/subscriptions", SubscriptionsHandler(grpcsrv, logger))
 	mux.Handle("/subscriptions/", subscriptionHandler)

@@ -1,0 +1,56 @@
+apiVersion: tinkerbell.org/v1alpha1
+kind: Hardware
+metadata:
+  creationTimestamp: null
+  labels:
+    type: wg-4
+  name: node10
+spec:
+  disks:
+  - device: /dev/sda
+  interfaces:
+  - dhcp:
+      arch: x86_64
+      hostname: 
+      ip:
+        address: 191.17.0.81
+        family: 4
+        gateway: 191.17.0.1
+        netmask: 255.255.254.0
+      lease_time: 4294967294
+      mac: 00:50:56:9a:9e:d3
+      name_servers:
+      - 8.8.8.8
+      uefi: true
+    netboot:
+      allowPXE: true
+      allowWorkflow: true
+  metadata:
+    facility:
+      facility_code: onprem
+      plan_slug: c2.medium.x86
+    instance:
+      ssh_keys: ["hi", "hola"]
+      allow_pxe: true
+      always_pxe: true
+      hostname: node10
+      id: 00:50:56:9a:9e:d3
+      ips:
+      - address: 191.17.0.81
+        family: 4
+        gateway: 191.17.0.1
+        netmask: 255.255.254.0
+        public: true
+      - address: 191.17.0.82
+        family: 6
+        gateway: 191.17.0.1
+        netmask: 255.255.254.0
+        public: true
+      - address: 191.17.0.83
+        family: 4
+        gateway: 191.17.0.2
+        netmask: 255.255.254.1
+        public: false
+      operating_system: {}
+    state: provisioning
+status: {}

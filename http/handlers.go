@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,17 +53,17 @@ var ec2Filters = map[string]string{
 }
 
 var hegelFilters = map[string]string{
-	"":                      `"metadata", "userdata"`, // base path
-	"/userdata":             ".metadata.userdata",
-	"/metadata":             `["instance-id", "hostname", "disks", "public-ipv4", "public-ipv6", "local-ipv4", "gateway", "netmask"] | sort | .[]`,
-	"/metadata/instance-id": ".metadata.instance.id",
-	"/metadata/hostname":    ".metadata.instance.hostname",
-	"/metadata/disks":       ".metadata.disks",
-	"/metadata/public-ipv4": ".metadata.instance.network.addresses[]? | select(.address_family == 4 and .public == true) | .address",
-	"/metadata/public-ipv6": ".metadata.instance.network.addresses[]? | select(.address_family == 6 and .public == true) | .address",
-	"/metadata/local-ipv4":  ".metadata.instance.network.addresses[]? | select(.address_family == 4 and .public == false) | .address",
-	"/metadata/gateway":     ".metadata.instance.network.addresses[]? | .gateway",
-	"/metadata/netmask":     ".metadata.instance.network.addresses[]? | .netmask",
+	"":                           `"metadata", "userdata"`, // base path
+	"/user-data":                 ".metadata.userdata",
+	"/meta-data":                 `["hostname", "disks", "public-ipv4", "public-ipv6", "local-ipv4", "gateway", "netmask"] | sort | .[]`,
+	"/meta-data/hostname":        ".metadata.instance.hostname",
+	"/meta-data/disks":           ".metadata.disks | length",
+	"/meta-data/public-ipv4":     ".metadata.instance.network.addresses[]? | select(.address_family == 4 and .public == true) | .address",
+	"/meta-data/public-ipv6":     ".metadata.instance.network.addresses[]? | select(.address_family == 6 and .public == true) | .address",
+	"/meta-data/local-ipv4":      ".metadata.instance.network.addresses[]? | select(.address_family == 4 and .public == false) | .address",
+	"/meta-data/gateway":         ".metadata.instance.network.addresses[]? | .gateway",
+	"/meta-data/netmask":         ".metadata.instance.network.addresses[]? | .netmask",
+	"/meta-data/ssh-public-keys": ".metadata.instance.ssh_keys | length",
 }
 
 func VersionHandler(logger log.Logger) http.Handler {
@@ -275,7 +276,8 @@ func HegelMetadataHandler(logger log.Logger, client hardware.Client) http.Handle
 
 		logger.With("exported", string(ehw)).Debug("Exported hardware")
 
-		filter, err := processHegelQuery(r.URL.Path)
+		// fmt.Printf("request header: %T\n", r.Header["Accept"])
+		filter, err := processHegelQuery(r.URL.Path, returnJSONObject(r.Header["Accept"]))
 		if err != nil {
 			logger.With("error", err).Info("failed to process hegel query")
 			w.WriteHeader(http.StatusNotFound)
@@ -286,11 +288,14 @@ func HegelMetadataHandler(logger log.Logger, client hardware.Client) http.Handle
 			return
 		}
 
-		resp, err := filterMetadata(ehw, filter)
+		resp, err := filterHegelMetadata(ehw, filter, r.URL.Path)
 		if err != nil {
 			logger.With("error", err).Info("failed to filter metadata")
 		}
 
+		if returnJSONObject(r.Header["Accept"]) {
+			w.Header().Set("Content-Type", "application/json")
+		}
 		_, err = w.Write(resp)
 		if err != nil {
 			logger.With("error", err).Info("failed to write response")
@@ -338,6 +343,118 @@ func filterMetadata(hw []byte, filter string) ([]byte, error) {
 	return bytes.TrimSuffix(result.Bytes(), []byte("\n")), nil
 }
 
+func filterHegelMetadata(hw []byte, filter string, url string) ([]byte, error) {
+	var result bytes.Buffer
+	query, err := gojq.Parse(filter)
+	if err != nil {
+		return nil, err
+	}
+	input := make(map[string]interface{})
+	err = json.Unmarshal(hw, &input)
+	if err != nil {
+		return nil, err
+	}
+	iter := query.Run(input)
+
+	floatSet := make(map[float64]bool)
+	networkObjectCounter := 0
+
+	for {
+		v, ok := iter.Next()
+		if !ok {
+			break
+		}
+
+		if v == nil {
+			continue
+		}
+
+		switch vv := v.(type) {
+		case error:
+			return nil, errors.Wrap(vv, "error while filtering with gojq")
+		case string:
+			if isMACAddress(url) {
+				switch routeLength(url) {
+				case 5:
+					networkIndex := getNetworkIndex(url)
+					if networkIndex == networkObjectCounter {
+						result.WriteString(vv)
+						result.WriteRune('\n')
+					}
+					networkObjectCounter++
+				default:
+					result.WriteString(vv)
+					result.WriteRune('\n')
+				}
+			} else {
+				result.WriteString(vv)
+				result.WriteRune('\n')
+			}
+		case int:
+			if strings.Contains(url, "disks") {
+				for i := 0; i < vv; i++ {
+					marshalled, err := json.Marshal(i)
+					if err != nil {
+						return nil, errors.Wrap(err, "error marshalling jq result")
+					}
+					result.Write(marshalled)
+					result.WriteRune('\n')
+				}
+			} else if strings.Contains(url, "ssh-public-keys") {
+				for i := 0; i < vv; i++ {
+					marshalled, err := json.Marshal(i)
+					if err != nil {
+						return nil, errors.Wrap(err, "error marshalling jq result")
+					}
+					result.Write(marshalled)
+					result.WriteRune('\n')
+				}
+			}
+		case float64:
+			if isMACAddress(url) {
+				switch routeLength(url) {
+				case 2:
+					if !floatSet[vv] {
+						//* preventing from writing duplicate family addresses
+						result.WriteString("ipv" + fmt.Sprint(vv))
+						result.WriteRune('\n')
+					}
+					floatSet[vv] = true
+				}
+			}
+		case map[string]interface{}:
+			if isMACAddress(url) {
+				switch routeLength(url) {
+				case 3:
+					marshalled, err := json.Marshal(networkObjectCounter)
+					networkObjectCounter++
+					if err != nil {
+						return nil, errors.Wrap(err, "error marshalling jq result")
+					}
+					result.Write(marshalled)
+					result.WriteRune('\n')
+				}
+			} else {
+				marshalled, err := json.Marshal(vv)
+				if err != nil {
+					return nil, errors.Wrap(err, "error marshalling jq result")
+				}
+				result.Write(marshalled)
+				result.WriteRune('\n')
+			}
+		default:
+			marshalled, err := json.Marshal(vv)
+			if err != nil {
+				return nil, errors.Wrap(err, "error marshalling jq result")
+			}
+			result.Write(marshalled)
+			result.WriteRune('\n')
+		}
+	}
+
+	return bytes.TrimSuffix(result.Bytes(), []byte("\n")), nil
+}
+
 // processEC2Query returns either a specific filter (used to parse hardware data for the value of a specific field),
 // or a comma-separated list of metadata items (to be printed).
 func processEC2Query(url string) (string, error) {
@@ -351,8 +468,53 @@ func processEC2Query(url string) (string, error) {
 	return filter, nil
 }
 
-func processHegelQuery(url string) (string, error) {
+func processHegelQuery(url string, jsonRequest bool) (string, error) {
 	query := strings.TrimRight(strings.TrimPrefix(url, "/v0"), "/") // remove base pattern and trailing slash
+
+	if query == "/meta-data" && jsonRequest {
+		filter := ".metadata.instance"
+		return filter, nil
+	} else if strings.Contains(query, "ssh-public-keys/") {
+		index := strings.SplitAfter(query, "ssh-public-keys/")[1]
+		filter := ".metadata.instance.ssh_keys[" + index + "]"
+		return filter, nil
+	} else if strings.Contains(query, "disks/") {
+		index := strings.SplitAfter(query, "disks/")[1]
+		filter := ".metadata.disks[" + index + "]"
+		return filter, nil
+	} else if isMACAddress(query) { //! improve method of verifying that we have a mac address in the query
+		//* indicates that we have a mac address in the query
+		split_query := strings.Split(query, "/")[1:] //* gets rid of empty character at the beginning
+		mac := split_query[1]
+		switch len(split_query) {
+		case 2:
+			filter := "select(.metadata.instance.id == \"" + mac + "\") |"
+			filter += ".metadata.instance.network.addresses[]? | .address_family"
+			return filter, nil
+		case 3:
+			address_family := strings.TrimPrefix(split_query[2], "ipv")
+			filter := "select(.metadata.instance.id == \"" + mac + "\") |"
+			filter += ".metadata.instance.network.addresses[]? | select(.address_family == " + address_family + ")"
+			return filter, nil
+		case 4:
+			filter := `["ip", "netmask"] | .[]`
+			return filter, nil
+		case 5:
+			address_family := strings.TrimPrefix(split_query[2], "ipv")
+			filter := "select(.metadata.instance.id == \"" + mac + "\") |"
+			filter += ".metadata.instance.network.addresses[]? | select(.address_family == " + address_family + ") |"
+			if split_query[4] == "ip" {
+				filter += ".address"
+			} else if split_query[4] == "netmask" {
+				filter += ".netmask"
+			} else {
+				return "", errors.Errorf("invalid endpoint: %v", query)
+			}
+			return filter, nil
+		}
+		filter := ".metadata.instance.network.addresses[]? | select(.address_family == 4 and .public == true) | .address"
+		return filter, nil
+	}
 
 	filter, ok := hegelFilters[query]
 	if !ok {
@@ -360,6 +522,32 @@ func processHegelQuery(url string) (string, error) {
 	}
 
 	return filter, nil
+}
+
+func routeLength(url string) int {
+	query := strings.TrimRight(strings.TrimPrefix(url, "/v0/"), "/") // remove base pattern and trailing slash
+	split_query := strings.Split(query, "/")
+	return len(split_query)
+}
+
+func isMACAddress(url string) bool {
+	return strings.Count(url, ":") == 5
+}
+
+func getNetworkIndex(url string) int {
+	query := strings.TrimRight(strings.TrimPrefix(url, "/v0/"), "/") // remove base pattern and trailing slash
+	split_query := strings.Split(query, "/")
+	val, _ := strconv.Atoi(split_query[3])
+	return val
+}
+
+func returnJSONObject(httpHeaderAcceptType []string) bool {
+	for _, accept := range httpHeaderAcceptType {
+		if accept == "application/json" {
+			return true
+		}
+	}
+	return false
 }
 
 func getIPFromRequest(r *http.Request) string {
