@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/itchyny/gojq"
 	"github.com/packethost/pkg/log"
 	"github.com/pkg/errors"
@@ -300,6 +301,35 @@ func HegelMetadataHandler(logger log.Logger, client hardware.Client) http.Handle
 		if err != nil {
 			logger.With("error", err).Info("failed to write response")
 		}
+	})
+}
+
+func getHardware(ctx context.Context, client hardware.Client, ip string) (hardware.K8sHardware, error) {
+	hw, err := client.ByIP(ctx, ip)
+	if err != nil {
+		return hardware.K8sHardware{}, err
+	}
+
+	ehw, err := hw.Export()
+	if err != nil {
+		return hardware.K8sHardware{}, err
+	}
+
+	var reversed hardware.K8sHardware
+	if err := json.Unmarshal(ehw, &reversed); err != nil {
+		return hardware.K8sHardware{}, err
+	}
+	return reversed, nil
+}
+
+func v0HegelMetadataHandler(logger log.Logger, client hardware.Client, rg *gin.RouterGroup) {
+	metadata := rg.Group("/meta-data")
+
+	metadata.GET("/:mac/ipv4/:index/ip", func(ctx *gin.Context) {
+		hardware, _ := getHardware(ctx, client, ctx.ClientIP())
+		index, _ := strconv.Atoi(ctx.Param("index"))
+		ip := hardware.Metadata.Instance.Network.Addresses[index].Address
+		ctx.String(http.StatusOK, ip)
 	})
 }
 

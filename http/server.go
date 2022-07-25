@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/packethost/pkg/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -31,6 +32,10 @@ func Serve(
 ) error {
 	logger.Info("in the http serve func")
 	var mux http.ServeMux
+	router := gin.Default()
+
+	v0 := router.Group("/v0")
+
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.Handle("/_packet/healthcheck", HealthCheckHandler(logger, client, start))
 	mux.Handle("/_packet/version", VersionHandler(logger))
@@ -40,9 +45,12 @@ func Serve(
 		mux.Handle("/2009-04-04/", ec2MetadataHandler)
 		mux.Handle("/2009-04-04", ec2MetadataHandler)
 	} else {
-		hegelMetadataHandler := otelhttp.WithRouteTag("/v0", HegelMetadataHandler(logger, client))
-		mux.Handle("/v0/", hegelMetadataHandler)
-		mux.Handle("/v0", hegelMetadataHandler)
+		// hegelMetadataHandler := otelhttp.WithRouteTag("/v0", HegelMetadataHandler(logger, client))
+		// mux.Handle("/v0/", hegelMetadataHandler)
+		// mux.Handle("/v0", hegelMetadataHandler)
+
+		v0HegelMetadataHandler(logger, client, v0)
+		// router.Run(":5000")
 	}
 
 	subscriptionHandler := otelhttp.WithRouteTag("/subscriptions", SubscriptionsHandler(grpcsrv, logger))
@@ -56,7 +64,7 @@ func Serve(
 
 	// Add an X-Forward-For middleware for proxies.
 	proxies := xff.ParseTrustedProxies(unparsedProxies)
-	handler, err := xff.HTTPHandler(&mux, proxies)
+	handler, err := xff.HTTPHandler(router, proxies)
 	if err != nil {
 		return err
 	}
