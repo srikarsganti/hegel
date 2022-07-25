@@ -324,12 +324,102 @@ func getHardware(ctx context.Context, client hardware.Client, ip string) (hardwa
 
 func v0HegelMetadataHandler(logger log.Logger, client hardware.Client, rg *gin.RouterGroup) {
 	metadata := rg.Group("/meta-data")
+	metadata.GET("/disks", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		disk := hardware.Metadata.Disks
+		for i := 0; i < len(disk); i++ {
+			c.String(http.StatusOK, fmt.Sprint(i))
+		}
+	})
 
-	metadata.GET("/:mac/ipv4/:index/ip", func(ctx *gin.Context) {
-		hardware, _ := getHardware(ctx, client, ctx.ClientIP())
-		index, _ := strconv.Atoi(ctx.Param("index"))
+	metadata.GET("/disks/:index", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		index, err := strconv.Atoi(c.Param("index"))
+		if err != nil {
+			logger.With("error", err).Info("disk interface index is not a valid number")
+		}
+		disk := hardware.Metadata.Disks[index]
+		c.JSON(http.StatusOK, disk)
+	})
+
+	metadata.GET("/ssh-public-keys", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		sshKeys := hardware.Metadata.Instance.SSHKeys
+		for i := 0; i < len(sshKeys); i++ {
+			c.String(http.StatusOK, fmt.Sprintln(i))
+		}
+	})
+
+	metadata.GET("/ssh-public-keys/:index", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		index, err := strconv.Atoi(c.Param("index"))
+		if err != nil {
+			logger.With("error", err).Info("disk interface index is not a valid number")
+		}
+		ssh := hardware.Metadata.Instance.SSHKeys[index]
+		c.String(http.StatusOK, ssh)
+	})
+
+	metadata.GET("/hostname", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		hostname := hardware.Metadata.Instance.Hostname
+		c.String(http.StatusOK, hostname)
+
+	})
+
+	metadata.GET("/gateway", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		gateway := hardware.Metadata.Instance.Network.Addresses[0].Gateway
+		c.String(http.StatusOK, gateway)
+
+	})
+
+	metadata.GET("/:mac/ipv4/:index", func(c *gin.Context) {
+		c.String(http.StatusOK, "ip\nnetmask")
+	})
+
+	metadata.GET("/:mac/ipv4/:index/ip", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		index, err := strconv.Atoi(c.Param("index"))
+		if err != nil {
+			logger.With("error", err).Info("ipv4 interface index is not a valid number")
+		}
 		ip := hardware.Metadata.Instance.Network.Addresses[index].Address
-		ctx.String(http.StatusOK, ip)
+		c.String(http.StatusOK, ip)
+	})
+
+	metadata.GET("/:mac/ipv4/:index/netmask", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		index, err := strconv.Atoi(c.Param("index"))
+		if err != nil {
+			logger.With("error", err).Info("ipv4 interface index is not a valid number")
+		}
+		netmask := hardware.Metadata.Instance.Network.Addresses[index].Netmask
+		c.String(http.StatusOK, netmask)
 	})
 }
 
