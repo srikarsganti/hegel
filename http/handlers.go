@@ -323,6 +323,20 @@ func getHardware(ctx context.Context, client hardware.Client, ip string) (hardwa
 }
 
 func v0HegelMetadataHandler(logger log.Logger, client hardware.Client, rg *gin.RouterGroup) {
+	userdata := rg.Group("/user-data")
+	userdata.GET("", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		data := hardware.Metadata.Userdata
+		if data == nil {
+			c.String(http.StatusOK, "")
+		} else {
+			c.String(http.StatusOK, *data)
+		}
+	})
+
 	metadata := rg.Group("/meta-data")
 	metadata.GET("/disks", func(c *gin.Context) {
 		hardware, err := getHardware(c, client, c.ClientIP())
@@ -331,7 +345,7 @@ func v0HegelMetadataHandler(logger log.Logger, client hardware.Client, rg *gin.R
 		}
 		disk := hardware.Metadata.Disks
 		for i := 0; i < len(disk); i++ {
-			c.String(http.StatusOK, fmt.Sprint(i))
+			c.String(http.StatusOK, fmt.Sprintln(i))
 		}
 	})
 
@@ -344,8 +358,14 @@ func v0HegelMetadataHandler(logger log.Logger, client hardware.Client, rg *gin.R
 		if err != nil {
 			logger.With("error", err).Info("disk interface index is not a valid number")
 		}
-		disk := hardware.Metadata.Disks[index]
-		c.JSON(http.StatusOK, disk)
+		disksArray := hardware.Metadata.Disks
+		if index >= 0 && index < len(disksArray) {
+			disk := hardware.Metadata.Disks[index]
+			c.JSON(http.StatusOK, disk)
+		} else {
+			c.JSON(http.StatusBadRequest, nil)
+			//? is this the best thing to return
+		}
 	})
 
 	metadata.GET("/ssh-public-keys", func(c *gin.Context) {
@@ -368,8 +388,14 @@ func v0HegelMetadataHandler(logger log.Logger, client hardware.Client, rg *gin.R
 		if err != nil {
 			logger.With("error", err).Info("disk interface index is not a valid number")
 		}
-		ssh := hardware.Metadata.Instance.SSHKeys[index]
-		c.String(http.StatusOK, ssh)
+		sshKeys := hardware.Metadata.Instance.SSHKeys
+		if index >= 0 && index < len(sshKeys) {
+			ssh := hardware.Metadata.Instance.SSHKeys[index]
+			c.String(http.StatusOK, ssh)
+		} else {
+			c.String(http.StatusBadRequest, "")
+			//? is this the best thing to return
+		}
 	})
 
 	metadata.GET("/hostname", func(c *gin.Context) {
@@ -379,7 +405,7 @@ func v0HegelMetadataHandler(logger log.Logger, client hardware.Client, rg *gin.R
 		}
 		hostname := hardware.Metadata.Instance.Hostname
 		c.String(http.StatusOK, hostname)
-
+		//? additional security
 	})
 
 	metadata.GET("/gateway", func(c *gin.Context) {
@@ -389,37 +415,254 @@ func v0HegelMetadataHandler(logger log.Logger, client hardware.Client, rg *gin.R
 		}
 		gateway := hardware.Metadata.Instance.Network.Addresses[0].Gateway
 		c.String(http.StatusOK, gateway)
+		//? additional security?
 
+	})
+
+	metadata.GET("/:mac", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		mac := c.Param("mac")
+		if mac != hardware.Metadata.Instance.ID {
+			c.String(http.StatusNoContent, "")
+		} else {
+			networkInfo := hardware.Metadata.Instance.Network.Addresses
+			availableIP := map[string]bool{
+				"ipv4": false,
+				"ipv6": false,
+			}
+			for _, v := range networkInfo {
+				if v.AddressFamily == 4 {
+					availableIP["ipv4"] = true
+				} else if v.AddressFamily == 6 {
+					availableIP["ipv6"] = true
+				}
+			}
+			var addressIsAvailable bool = false
+			for key, value := range availableIP {
+				if value {
+					c.String(http.StatusOK, fmt.Sprintln(key))
+					addressIsAvailable = true
+				}
+			}
+			if !addressIsAvailable {
+				c.String(http.StatusNoContent, "")
+			}
+		}
+	})
+
+	metadata.GET("/:mac/ipv4", func(c *gin.Context) {
+		hardware, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		mac := c.Param("mac")
+		if mac != hardware.Metadata.Instance.ID {
+			c.String(http.StatusNoContent, "")
+		} else {
+			networkInfo := hardware.Metadata.Instance.Network.Addresses
+			i := 0
+			for _, v := range networkInfo {
+				if v.AddressFamily == 4 {
+					//* printing the indexes
+					c.String(http.StatusOK, fmt.Sprintln(i))
+					i++
+				}
+			}
+			if i == 0 {
+				c.String(http.StatusNoContent, "")
+			}
+		}
 	})
 
 	metadata.GET("/:mac/ipv4/:index", func(c *gin.Context) {
-		c.String(http.StatusOK, "ip\nnetmask")
+		hardwareStruct, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		mac := c.Param("mac")
+		if mac != hardwareStruct.Metadata.Instance.ID {
+			c.String(http.StatusNoContent, "")
+		} else {
+			networkInfo := hardwareStruct.Metadata.Instance.Network.Addresses
+			var ipv4Networks []hardware.K8sHardwareMetadataInstanceNetworkAddress
+			for _, v := range networkInfo {
+				if v.AddressFamily == 4 {
+					ipv4Networks = append(ipv4Networks, v)
+				}
+			}
+			if len(ipv4Networks) == 0 {
+				c.String(http.StatusNoContent, "")
+			} else {
+				c.String(http.StatusOK, "ip\nnetmask")
+			}
+		}
 	})
 
 	metadata.GET("/:mac/ipv4/:index/ip", func(c *gin.Context) {
-		hardware, err := getHardware(c, client, c.ClientIP())
+		hardwareStruct, err := getHardware(c, client, c.ClientIP())
 		if err != nil {
 			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
 		}
-		index, err := strconv.Atoi(c.Param("index"))
-		if err != nil {
-			logger.With("error", err).Info("ipv4 interface index is not a valid number")
+		mac := c.Param("mac")
+		if mac != hardwareStruct.Metadata.Instance.ID {
+			c.String(http.StatusNoContent, "")
+		} else {
+			index, err := strconv.Atoi(c.Param("index"))
+			if err != nil {
+				logger.With("error", err).Info("ipv4 interface index is not a valid number")
+			}
+			networkInfo := hardwareStruct.Metadata.Instance.Network.Addresses
+			var ipv4Networks []hardware.K8sHardwareMetadataInstanceNetworkAddress
+			for _, v := range networkInfo {
+				if v.AddressFamily == 4 {
+					ipv4Networks = append(ipv4Networks, v)
+				}
+			}
+			if len(ipv4Networks) == 0 || index < 0 || index >= len(ipv4Networks) {
+				c.String(http.StatusNoContent, "")
+			} else {
+				ip := ipv4Networks[index].Address
+				c.String(http.StatusOK, ip)
+			}
 		}
-		ip := hardware.Metadata.Instance.Network.Addresses[index].Address
-		c.String(http.StatusOK, ip)
 	})
 
 	metadata.GET("/:mac/ipv4/:index/netmask", func(c *gin.Context) {
+		hardwareStruct, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		mac := c.Param("mac")
+		if mac != hardwareStruct.Metadata.Instance.ID {
+			c.String(http.StatusNoContent, "")
+		} else {
+			index, err := strconv.Atoi(c.Param("index"))
+			if err != nil {
+				logger.With("error", err).Info("ipv4 interface index is not a valid number")
+			}
+			networkInfo := hardwareStruct.Metadata.Instance.Network.Addresses
+			var ipv4Networks []hardware.K8sHardwareMetadataInstanceNetworkAddress
+			for _, v := range networkInfo {
+				if v.AddressFamily == 4 {
+					ipv4Networks = append(ipv4Networks, v)
+				}
+			}
+			if len(ipv4Networks) == 0 || index < 0 || index >= len(ipv4Networks) {
+				c.String(http.StatusNoContent, "")
+			} else {
+				netmask := ipv4Networks[index].Netmask
+				c.String(http.StatusOK, netmask)
+			}
+		}
+	})
+
+	metadata.GET("/:mac/ipv6", func(c *gin.Context) {
 		hardware, err := getHardware(c, client, c.ClientIP())
 		if err != nil {
 			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
 		}
-		index, err := strconv.Atoi(c.Param("index"))
-		if err != nil {
-			logger.With("error", err).Info("ipv4 interface index is not a valid number")
+		mac := c.Param("mac")
+		if mac != hardware.Metadata.Instance.ID {
+			c.String(http.StatusNoContent, "")
+		} else {
+			networkInfo := hardware.Metadata.Instance.Network.Addresses
+			i := 0
+			for _, v := range networkInfo {
+				if v.AddressFamily == 6 {
+					//* printing the indexes
+					c.String(http.StatusOK, fmt.Sprintln(i))
+					i++
+				}
+			}
+			if i == 0 {
+				c.String(http.StatusNoContent, "")
+			}
 		}
-		netmask := hardware.Metadata.Instance.Network.Addresses[index].Netmask
-		c.String(http.StatusOK, netmask)
+	})
+
+	metadata.GET("/:mac/ipv6/:index", func(c *gin.Context) {
+		hardwareStruct, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		mac := c.Param("mac")
+		if mac != hardwareStruct.Metadata.Instance.ID {
+			c.String(http.StatusNoContent, "")
+		} else {
+			networkInfo := hardwareStruct.Metadata.Instance.Network.Addresses
+			var ipv6Networks []hardware.K8sHardwareMetadataInstanceNetworkAddress
+			for _, v := range networkInfo {
+				if v.AddressFamily == 6 {
+					ipv6Networks = append(ipv6Networks, v)
+				}
+			}
+			if len(ipv6Networks) == 0 {
+				c.String(http.StatusNoContent, "")
+			} else {
+				c.String(http.StatusOK, "ip\nnetmask")
+			}
+		}
+	})
+
+	metadata.GET("/:mac/ipv6/:index/ip", func(c *gin.Context) {
+		hardwareStruct, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		mac := c.Param("mac")
+		if mac != hardwareStruct.Metadata.Instance.ID {
+			c.String(http.StatusNoContent, "")
+		} else {
+			index, err := strconv.Atoi(c.Param("index"))
+			if err != nil {
+				logger.With("error", err).Info("ipv6 interface index is not a valid number")
+			}
+			networkInfo := hardwareStruct.Metadata.Instance.Network.Addresses
+			var ipv6Networks []hardware.K8sHardwareMetadataInstanceNetworkAddress
+			for _, v := range networkInfo {
+				if v.AddressFamily == 6 {
+					ipv6Networks = append(ipv6Networks, v)
+				}
+			}
+			if len(ipv6Networks) == 0 || index < 0 || index >= len(ipv6Networks) {
+				c.String(http.StatusNoContent, "")
+			} else {
+				ip := ipv6Networks[index].Address
+				c.String(http.StatusOK, ip)
+			}
+		}
+	})
+
+	metadata.GET("/:mac/ipv6/:index/netmask", func(c *gin.Context) {
+		hardwareStruct, err := getHardware(c, client, c.ClientIP())
+		if err != nil {
+			logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+		}
+		mac := c.Param("mac")
+		if mac != hardwareStruct.Metadata.Instance.ID {
+			c.String(http.StatusNoContent, "")
+		} else {
+			index, err := strconv.Atoi(c.Param("index"))
+			if err != nil {
+				logger.With("error", err).Info("ipv6 interface index is not a valid number")
+			}
+			networkInfo := hardwareStruct.Metadata.Instance.Network.Addresses
+			var ipv6Networks []hardware.K8sHardwareMetadataInstanceNetworkAddress
+			for _, v := range networkInfo {
+				if v.AddressFamily == 6 {
+					ipv6Networks = append(ipv6Networks, v)
+				}
+			}
+			if len(ipv6Networks) == 0 || index < 0 || index >= len(ipv6Networks) {
+				c.String(http.StatusNoContent, "")
+			} else {
+				netmask := ipv6Networks[index].Netmask
+				c.String(http.StatusOK, netmask)
+			}
+		}
 	})
 }
 
