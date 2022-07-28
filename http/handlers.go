@@ -275,15 +275,6 @@ func processEC2Query(url string) (string, error) {
 	return filter, nil
 }
 
-func returnJSONObject(httpHeaderAcceptType []string) bool {
-	for _, accept := range httpHeaderAcceptType {
-		if accept == "application/json" {
-			return true
-		}
-	}
-	return false
-}
-
 func getIPFromRequest(r *http.Request) string {
 	addr := r.RemoteAddr
 	if strings.ContainsRune(addr, ':') {
