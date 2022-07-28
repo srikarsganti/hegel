@@ -19,16 +19,26 @@ import (
 //TODO: access mac address from DHCP interface
 //TODO: access all network data from DHCP interface
 //TODO: ipv6, ipv4 printing behavior
+//TODO: metadata endpoint
 
 //! todo TODO
 //TODO: make newline behavior consistent
-//TODO: metadata endpoint
+
+type metadataJSON struct {
+	Interfaces []hardware.K8sNetworkInterface `json:"interfaces,omitempty"`
+	Disks      []hardware.K8sHardwareDisk     `json:"disks,omitempty"`
+	SSHKeys    []string                       `json:"ssh_keys,omitempty"`
+	Hostname   string                         `json:"hostname,omitempty"`
+	Gateway    string                         `json:"gateway,omitempty"`
+}
 
 func v0HegelMetadataHandler(logger log.Logger, client hardware.Client, rg *gin.RouterGroup) {
 	userdata := rg.Group("/user-data")
 	userdata.GET("", userdataHandler(logger, client))
 
 	metadata := rg.Group("/meta-data")
+	metadata.GET("", metadataHandler(logger, client))
+
 	metadata.GET("/disks", diskHandler(logger, client))
 	metadata.GET("/disks/:index", diskIndexHandler(logger, client))
 
@@ -80,6 +90,36 @@ func userdataHandler(logger log.Logger, client hardware.Client) gin.HandlerFunc 
 			c.String(http.StatusOK, "")
 		} else {
 			c.String(http.StatusOK, *data)
+		}
+	}
+	return gin.HandlerFunc(fn)
+}
+
+func metadataHandler(logger log.Logger, client hardware.Client) gin.HandlerFunc {
+	fn := func(c *gin.Context) {
+		var acceptJSON bool = false
+		for _, header := range c.Request.Header["Accept"] {
+			if header == "application/json" {
+				acceptJSON = true
+			}
+		}
+		if acceptJSON {
+			hardware, err := getHardware(c, client, c.ClientIP())
+			if err != nil {
+				logger.With("error", err).Info("failed to get hardware in v0 metadata handler")
+				c.JSON(http.StatusNotFound, nil)
+				return
+			}
+			c.Header("Content-Type", "application/json")
+			var jsonResponse metadataJSON
+			jsonResponse.Disks = hardware.Metadata.Instance.Disks
+			jsonResponse.Gateway = hardware.Metadata.Gateway
+			jsonResponse.Hostname = hardware.Metadata.Instance.Hostname
+			jsonResponse.SSHKeys = hardware.Metadata.Instance.SSHKeys
+			jsonResponse.Interfaces = hardware.Metadata.Interfaces
+			c.JSON(http.StatusOK, jsonResponse)
+		} else {
+			c.String(http.StatusOK, "disks\nssh-public-keys\ngateway\nhostname\n:mac\n")
 		}
 	}
 	return gin.HandlerFunc(fn)
@@ -192,7 +232,7 @@ func gatewayHandler(logger log.Logger, client hardware.Client) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, nil)
 			return
 		}
-		gateway := hardware.Metadata.Instance.Network.Addresses[0].Gateway //! err check
+		gateway := hardware.Metadata.Gateway
 		c.String(http.StatusOK, gateway)
 		//? additional security?
 
