@@ -211,6 +211,22 @@ func FromK8sTinkHardware(tinkHardware *tinkv1alpha1.Hardware) *K8sHardware {
 			},
 		)
 	}
+
+	//appending all network interface info to the array of interfaces within the Metadata sub-struct
+	for _, networkInterface := range tinkHardware.Spec.Interfaces {
+		if networkInterface.DHCP != nil {
+			hw.Metadata.Gateway = networkInterface.DHCP.IP.Gateway
+			hw.Metadata.Interfaces = append(
+				hw.Metadata.Interfaces,
+				K8sNetworkInterface{
+					MAC:     networkInterface.DHCP.MAC,
+					Address: networkInterface.DHCP.IP.Address,
+					Family:  networkInterface.DHCP.IP.Family,
+					Netmask: networkInterface.DHCP.IP.Netmask,
+				},
+			)
+		}
+	}
 	return hw
 }
 

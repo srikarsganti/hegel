@@ -45,9 +45,6 @@ func Serve(
 
 		httpHandler = &mux
 	} else {
-		// hegelMetadataHandler := otelhttp.WithRouteTag("/v0", HegelMetadataHandler(logger, client))
-		// mux.Handle("/v0/", hegelMetadataHandler)
-		// mux.Handle("/v0", hegelMetadataHandler)
 		router := gin.Default()
 		router.RedirectTrailingSlash = true
 		v0 := router.Group("/v0")
