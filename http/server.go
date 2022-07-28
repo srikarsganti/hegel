@@ -28,7 +28,7 @@ func Serve(
 	model datamodel.DataModel,
 	customEndpoints string,
 	unparsedProxies string,
-	defaultAPI string,
+	hegelAPI bool,
 ) error {
 	logger.Info("in the http serve func")
 	var mux http.ServeMux
@@ -38,7 +38,7 @@ func Serve(
 	mux.Handle("/_packet/healthcheck", HealthCheckHandler(logger, client, start))
 	mux.Handle("/_packet/version", VersionHandler(logger))
 
-	if defaultAPI == "equinix" {
+	if hegelAPI == false {
 		ec2MetadataHandler := otelhttp.WithRouteTag("/2009-04-04", EC2MetadataHandler(logger, client))
 		mux.Handle("/2009-04-04/", ec2MetadataHandler)
 		mux.Handle("/2009-04-04", ec2MetadataHandler)
@@ -49,6 +49,7 @@ func Serve(
 		// mux.Handle("/v0/", hegelMetadataHandler)
 		// mux.Handle("/v0", hegelMetadataHandler)
 		router := gin.Default()
+		router.RedirectTrailingSlash = true
 		v0 := router.Group("/v0")
 		v0HegelMetadataHandler(logger, client, v0)
 
