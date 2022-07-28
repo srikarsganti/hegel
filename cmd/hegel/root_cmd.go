@@ -77,7 +77,7 @@ type RootCommandOptions struct {
 	Kubeconfig       string `mapstructure:"kubeconfig"`
 	KubeNamespace    string `mapstructure:"kube-namespace"`
 
-	DefaultAPI bool `mapstructure:"default-api"`
+	DefaultAPI string `mapstructure:"default-api"`
 }
 
 func (o RootCommandOptions) GetDataModel() datamodel.DataModel {
@@ -219,7 +219,7 @@ func (c *RootCommand) configureFlags() error {
 
 	c.Flags().String("trusted-proxies", "", "A commma separated list of allowed peer IPs and/or CIDR blocks to replace with X-Forwarded-For for both gRPC and HTTP endpoints")
 
-	c.Flags().Bool("default-api", true, "Toggle to false to enable Hegel's new experimental API.")
+	c.Flags().String("default-api", "equinix", "Toggle to hegel to enable Hegel's new experimental API. Default is equinix.")
 
 	if err := c.vpr.BindPFlags(c.Flags()); err != nil {
 		return err

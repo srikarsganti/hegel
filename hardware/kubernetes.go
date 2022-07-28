@@ -204,8 +204,8 @@ func FromK8sTinkHardware(tinkHardware *tinkv1alpha1.Hardware) *K8sHardware {
 
 	//appending all disk devices to the array of Disks within the Metadata struct
 	for _, disk := range tinkHardware.Spec.Disks {
-		hw.Metadata.Disks = append(
-			hw.Metadata.Disks,
+		hw.Metadata.Instance.Disks = append(
+			hw.Metadata.Instance.Disks,
 			K8sHardwareDisk{
 				Device: disk.Device,
 			},
@@ -232,11 +232,38 @@ func (h K8sHardware) ID() (string, error) {
 
 type K8sHardwareMetadata struct {
 	Userdata *string                     `json:"userdata,omitempty"`
-	Disks    []K8sHardwareDisk           `json:"disks,omitempty"`
 	Instance K8sHardwareMetadataInstance `json:"instance,omitempty"`
+	//+optional
+	Interfaces []K8sNetworkInterface `json:"interfaces,omitempty"`
+}
+
+type K8sNetworkInterface struct {
+	//+optional
+	DHCP *DHCP `json:"dhcp,omitempty"`
+}
+
+type DHCP struct {
+	// +kubebuilder:validation:Pattern="([0-9a-f]{2}[:]){5}([0-9a-f]{2})"
+	MAC         string   `json:"mac,omitempty"`
+	Hostname    string   `json:"hostname,omitempty"`
+	LeaseTime   int64    `json:"lease_time,omitempty"`
+	NameServers []string `json:"name_servers,omitempty"`
+	TimeServers []string `json:"time_servers,omitempty"`
+	Arch        string   `json:"arch,omitempty"`
+	UEFI        bool     `json:"uefi,omitempty"`
+	IfaceName   string   `json:"iface_name,omitempty"`
+	IP          *IP      `json:"ip,omitempty"`
+}
+
+type IP struct {
+	Address string `json:"address,omitempty"`
+	Netmask string `json:"netmask,omitempty"`
+	Gateway string `json:"gateway,omitempty"`
+	Family  int64  `json:"family,omitempty"`
 }
 
 type K8sHardwareMetadataInstance struct {
+	Disks           []K8sHardwareDisk                          `json:"disks,omitempty"`
 	ID              string                                     `json:"id,omitempty"`
 	Hostname        string                                     `json:"hostname,omitempty"`
 	Plan            string                                     `json:"plan,omitempty"`
